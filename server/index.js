@@ -6,25 +6,45 @@ import nodemailer from "nodemailer";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ""))) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
   })
 );
 app.use(express.json());
 
+// Gmail app passwords are often copied with spaces — strip them
+const smtpUser = process.env.SMTP_USER?.trim();
+const smtpPass = process.env.SMTP_PASS?.replace(/\s+/g, "");
+
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_SECURE === "true",
+  service: "gmail",
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: smtpUser,
+    pass: smtpPass,
   },
+  connectionTimeout: 15000,
+  greetingTimeout: 15000,
+  socketTimeout: 20000,
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    smtpConfigured: Boolean(smtpUser && smtpPass),
+  });
 });
 
 app.post("/api/contact", async (req, res) => {
@@ -46,31 +66,34 @@ app.post("/api/contact", async (req, res) => {
       });
     }
 
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    if (!smtpUser || !smtpPass) {
       console.error("Missing SMTP credentials");
       return res.status(500).json({
         success: false,
-        message: "Email service is not configured.",
+        message: "Email service is not configured on the server.",
       });
     }
 
-    const toEmail = process.env.CONTACT_TO || process.env.SMTP_USER;
+    const toEmail = process.env.CONTACT_TO || smtpUser;
+    const safeName = String(name).slice(0, 200);
+    const safeEmail = String(email).slice(0, 200);
+    const safeMessage = String(message).slice(0, 5000);
 
     await transporter.sendMail({
-      from: `"Portfolio Contact" <${process.env.SMTP_USER}>`,
+      from: `"Portfolio Contact" <${smtpUser}>`,
       to: toEmail,
-      replyTo: email,
-      subject: `Portfolio message from ${name}`,
-      text: `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}`,
+      replyTo: safeEmail,
+      subject: `Portfolio message from ${safeName}`,
+      text: `Name: ${safeName}\nEmail: ${safeEmail}\n\nMessage:\n${safeMessage}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #20B2A6; border-bottom: 2px solid #20B2A6; padding-bottom: 8px;">
             New Portfolio Contact
           </h2>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+          <p><strong>Name:</strong> ${safeName}</p>
+          <p><strong>Email:</strong> <a href="mailto:${safeEmail}">${safeEmail}</a></p>
           <div style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px;">
-            <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+            <p style="margin: 0; white-space: pre-wrap;">${safeMessage}</p>
           </div>
         </div>
       `,
@@ -81,14 +104,26 @@ app.post("/api/contact", async (req, res) => {
       message: "Message sent successfully! I'll get back to you soon.",
     });
   } catch (error) {
-    console.error("Nodemailer error:", error);
+    console.error("Nodemailer error:", error?.message || error);
+    console.error("Nodemailer code:", error?.code);
+    console.error("Nodemailer response:", error?.response);
+
+    const isAuthError =
+      error?.code === "EAUTH" ||
+      /invalid login|username and password|credentials/i.test(
+        String(error?.message || "")
+      );
+
     return res.status(500).json({
       success: false,
-      message: "Failed to send message. Please try again later.",
+      message: isAuthError
+        ? "Email login failed. Check SMTP_USER and Gmail App Password on Render."
+        : "Failed to send message. Please try again later.",
     });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Contact API running on http://localhost:${PORT}`);
+  console.log(`SMTP configured: ${Boolean(smtpUser && smtpPass)}`);
 });
