@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import nodemailer from "nodemailer";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,44 +24,21 @@ app.use(
 );
 app.use(express.json());
 
-const smtpUser = process.env.SMTP_USER?.trim();
-const smtpPass = process.env.SMTP_PASS?.replace(/\s+/g, "");
+const resendApiKey = process.env.RESEND_API_KEY?.trim();
+const contactTo = (
+  process.env.CONTACT_TO ||
+  process.env.SMTP_USER ||
+  ""
+).trim();
+const fromEmail =
+  process.env.RESEND_FROM?.trim() || "Portfolio <onboarding@resend.dev>";
 
-// Prefer 587 STARTTLS — port 465 is often blocked on cloud hosts
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: false,
-    requireTLS: true,
-    auth: {
-      user: smtpUser,
-      pass: smtpPass,
-    },
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 25000,
-  });
-}
-
-app.get("/api/health", async (_req, res) => {
-  const info = {
+app.get("/api/health", (_req, res) => {
+  res.json({
     status: "ok",
-    smtpConfigured: Boolean(smtpUser && smtpPass),
-  };
-
-  if (smtpUser && smtpPass) {
-    try {
-      await createTransporter().verify();
-      info.smtpVerify = "ok";
-    } catch (error) {
-      info.smtpVerify = "fail";
-      info.smtpErrorCode = error?.code || null;
-      info.smtpErrorMessage = error?.message || String(error);
-    }
-  }
-
-  res.json(info);
+    emailProvider: "resend",
+    emailConfigured: Boolean(resendApiKey && contactTo),
+  });
 });
 
 app.post("/api/contact", async (req, res) => {
@@ -84,62 +60,65 @@ app.post("/api/contact", async (req, res) => {
       });
     }
 
-    if (!smtpUser || !smtpPass) {
+    if (!resendApiKey || !contactTo) {
       return res.status(500).json({
         success: false,
-        message: "Email service is not configured on the server.",
+        message:
+          "Email service is not configured. Set RESEND_API_KEY and CONTACT_TO on the server.",
       });
     }
 
-    const toEmail = (process.env.CONTACT_TO || smtpUser).trim();
     const safeName = String(name).slice(0, 200);
     const safeEmail = String(email).slice(0, 200);
     const safeMessage = String(message).slice(0, 5000);
 
-    const transporter = createTransporter();
-
-    await transporter.sendMail({
-      from: `"Portfolio Contact" <${smtpUser}>`,
-      to: toEmail,
-      replyTo: safeEmail,
-      subject: `Portfolio message from ${safeName}`,
-      text: `Name: ${safeName}\nEmail: ${safeEmail}\n\nMessage:\n${safeMessage}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #20B2A6; border-bottom: 2px solid #20B2A6; padding-bottom: 8px;">
-            New Portfolio Contact
-          </h2>
-          <p><strong>Name:</strong> ${safeName}</p>
-          <p><strong>Email:</strong> <a href="mailto:${safeEmail}">${safeEmail}</a></p>
-          <div style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px;">
-            <p style="margin: 0; white-space: pre-wrap;">${safeMessage}</p>
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [contactTo],
+        reply_to: safeEmail,
+        subject: `Portfolio message from ${safeName}`,
+        text: `Name: ${safeName}\nEmail: ${safeEmail}\n\nMessage:\n${safeMessage}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #20B2A6; border-bottom: 2px solid #20B2A6; padding-bottom: 8px;">
+              New Portfolio Contact
+            </h2>
+            <p><strong>Name:</strong> ${safeName}</p>
+            <p><strong>Email:</strong> <a href="mailto:${safeEmail}">${safeEmail}</a></p>
+            <div style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px;">
+              <p style="margin: 0; white-space: pre-wrap;">${safeMessage}</p>
+            </div>
           </div>
-        </div>
-      `,
+        `,
+      }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      console.error("Resend error:", data);
+      return res.status(500).json({
+        success: false,
+        message: data?.message || "Failed to send message. Please try again later.",
+        errorCode: data?.name || response.status,
+      });
+    }
 
     return res.status(200).json({
       success: true,
       message: "Message sent successfully! I'll get back to you soon.",
     });
   } catch (error) {
-    console.error("Nodemailer error:", error?.message || error);
-    console.error("Nodemailer code:", error?.code);
-    console.error("Nodemailer response:", error?.response);
-    console.error("Nodemailer command:", error?.command);
-
-    const isAuthError =
-      error?.code === "EAUTH" ||
-      /invalid login|username and password|credentials/i.test(
-        String(error?.message || "")
-      );
-
+    console.error("Contact API error:", error?.message || error);
     return res.status(500).json({
       success: false,
-      message: isAuthError
-        ? "Email login failed. Check SMTP_USER and Gmail App Password on Render."
-        : "Failed to send message. Please try again later.",
-      // Safe diagnostics (no secrets) so we can see why Render fails
+      message: "Failed to send message. Please try again later.",
       errorCode: error?.code || null,
       errorMessage: error?.message || null,
     });
@@ -148,5 +127,5 @@ app.post("/api/contact", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Contact API running on http://localhost:${PORT}`);
-  console.log(`SMTP configured: ${Boolean(smtpUser && smtpPass)}`);
+  console.log(`Resend configured: ${Boolean(resendApiKey && contactTo)}`);
 });
