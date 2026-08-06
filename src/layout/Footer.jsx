@@ -25,7 +25,7 @@ export const Footer = () => {
               SA<span className="text-primary">.</span>
             </a>
             <p className="text-sm text-muted-foreground mt-2">
-              © {currentYear} Syed Ashik Ahamed. All rights reserved.
+              © {currentYear} Syed Ashik Ahamed.
             </p>
           </div>
 

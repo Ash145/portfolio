@@ -1,11 +1,11 @@
 const experiences = [
   {
     period: "July 2024 — Jan 2026",
-    role: "Associate Software Developer",
+    role: "Junior Full Stack Developer",
     company: "Finstein Advizory Service LLP",
     description:
       "Built a medical test analysis application, developing responsive UIs, integrating APIs, and collaborating with backend teams to deliver scalable solutions.",
-    technologies: ["React", "Nuxt.js", "JavaScript", "Python", "SQL", "Tailwind CSS", "FastAPI", "Github"],
+    technologies: ["React", "Nuxt.js", "JavaScript", "Python", "SQL", "Tailwind CSS", "FastAPI", "Socket.io", "Github"],
     current: true,
   }
 ];

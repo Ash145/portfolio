@@ -11,15 +11,14 @@ import { AnimatedBorderButton } from "../components/AnimatedBorderButton";
 const skills = [
   "React",
   "Socket.io",
-  "Nuxt.js",
   "Node.js",
+  "Express.js",
+  "Redux",
   "Python",
   "PostgreSQL",
-  "Redis",
   "Tailwind CSS",
-  "Figma",
   "Git",
-  "GitHub Actions",
+  "GitHub",
 ];
 
 export const Hero = () => {
@@ -79,7 +78,7 @@ export const Hero = () => {
               </h1>
               <p className="text-lg text-muted-foreground max-w-lg animate-fade-in animation-delay-200">
                 Hi, I'm Syed Ashik Ahamed — a junior full stack developer
-                specializing in React, Socket.io, and TypeScript. I build
+                specializing in React, Node.js, and TypeScript. I build
                 scalable, performant web applications.
               </p>
             </div>
