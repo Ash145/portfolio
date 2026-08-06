@@ -59,8 +59,11 @@ export const Contact = () => {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
+        const detail = [data.message, data.errorCode, data.errorMessage]
+          .filter(Boolean)
+          .join(" — ");
         throw new Error(
-          data.message || "Failed to send message. Please try again later."
+          detail || "Failed to send message. Please try again later."
         );
       }
 

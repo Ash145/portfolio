@@ -25,26 +25,44 @@ app.use(
 );
 app.use(express.json());
 
-// Gmail app passwords are often copied with spaces — strip them
 const smtpUser = process.env.SMTP_USER?.trim();
 const smtpPass = process.env.SMTP_PASS?.replace(/\s+/g, "");
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: smtpUser,
-    pass: smtpPass,
-  },
-  connectionTimeout: 15000,
-  greetingTimeout: 15000,
-  socketTimeout: 20000,
-});
+// Prefer 587 STARTTLS — port 465 is often blocked on cloud hosts
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: false,
+    requireTLS: true,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 25000,
+  });
+}
 
-app.get("/api/health", (_req, res) => {
-  res.json({
+app.get("/api/health", async (_req, res) => {
+  const info = {
     status: "ok",
     smtpConfigured: Boolean(smtpUser && smtpPass),
-  });
+  };
+
+  if (smtpUser && smtpPass) {
+    try {
+      await createTransporter().verify();
+      info.smtpVerify = "ok";
+    } catch (error) {
+      info.smtpVerify = "fail";
+      info.smtpErrorCode = error?.code || null;
+      info.smtpErrorMessage = error?.message || String(error);
+    }
+  }
+
+  res.json(info);
 });
 
 app.post("/api/contact", async (req, res) => {
@@ -67,17 +85,18 @@ app.post("/api/contact", async (req, res) => {
     }
 
     if (!smtpUser || !smtpPass) {
-      console.error("Missing SMTP credentials");
       return res.status(500).json({
         success: false,
         message: "Email service is not configured on the server.",
       });
     }
 
-    const toEmail = process.env.CONTACT_TO || smtpUser;
+    const toEmail = (process.env.CONTACT_TO || smtpUser).trim();
     const safeName = String(name).slice(0, 200);
     const safeEmail = String(email).slice(0, 200);
     const safeMessage = String(message).slice(0, 5000);
+
+    const transporter = createTransporter();
 
     await transporter.sendMail({
       from: `"Portfolio Contact" <${smtpUser}>`,
@@ -107,6 +126,7 @@ app.post("/api/contact", async (req, res) => {
     console.error("Nodemailer error:", error?.message || error);
     console.error("Nodemailer code:", error?.code);
     console.error("Nodemailer response:", error?.response);
+    console.error("Nodemailer command:", error?.command);
 
     const isAuthError =
       error?.code === "EAUTH" ||
@@ -119,6 +139,9 @@ app.post("/api/contact", async (req, res) => {
       message: isAuthError
         ? "Email login failed. Check SMTP_USER and Gmail App Password on Render."
         : "Failed to send message. Please try again later.",
+      // Safe diagnostics (no secrets) so we can see why Render fails
+      errorCode: error?.code || null,
+      errorMessage: error?.message || null,
     });
   }
 });
