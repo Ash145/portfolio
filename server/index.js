@@ -34,10 +34,16 @@ const fromEmail =
   process.env.RESEND_FROM?.trim() || "Portfolio <onboarding@resend.dev>";
 
 app.get("/api/health", (_req, res) => {
+  const maskedTo = contactTo
+    ? contactTo.replace(/^(.{2}).*(@.*)$/, "$1***$2")
+    : null;
+
   res.json({
     status: "ok",
     emailProvider: "resend",
     emailConfigured: Boolean(resendApiKey && contactTo),
+    contactTo: maskedTo,
+    from: fromEmail,
   });
 });
 
@@ -105,14 +111,18 @@ app.post("/api/contact", async (req, res) => {
       console.error("Resend error:", data);
       return res.status(500).json({
         success: false,
-        message: data?.message || "Failed to send message. Please try again later.",
+        message:
+          data?.message || "Failed to send message. Please try again later.",
         errorCode: data?.name || response.status,
       });
     }
 
+    console.log("Resend accepted email:", data?.id, "->", contactTo);
+
     return res.status(200).json({
       success: true,
       message: "Message sent successfully! I'll get back to you soon.",
+      id: data?.id || null,
     });
   } catch (error) {
     console.error("Contact API error:", error?.message || error);
