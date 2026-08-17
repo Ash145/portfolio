@@ -2,6 +2,24 @@ import { ArrowUpRight, Github } from "lucide-react";
 
 const projects = [
   {
+    title: "Chatify",
+    description:
+      "A real-time chat application built with React, Node.js, and Socket.io. It allows users to chat with each other in real-time.",
+    image: "/projects/chatify.png",
+    tags: [
+      "React",
+      "Vite",
+      "Node.js",
+      "Express",
+      "MongoDB",
+      "JWT",
+      "Socket.io",
+      "Tailwind CSS",
+    ],
+    link: "https://chatify-l3yy.onrender.com",
+    github: "https://github.com/Ash145/chat-app",
+  },
+  {
     title: "ExpenseTrack",
     description:
       "A family-friendly expense tracker for income and spending — with JWT auth, categorized transactions, a polished dashboard (totals, pie chart, monthly trends), filters, CSV export, and light/dark mode.",
